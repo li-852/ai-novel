@@ -1,0 +1,30 @@
+# ============================================================
+# ai-novel 知识库依赖清单
+# 安装：pip install -r requirements.txt
+# 版本策略：运行时核心依赖给出下限（>=），lancedb 锁定 0.33.x 避免 FTS API 弃用。
+# 可复现建议：在本机执行 `pip freeze > requirements.lock` 锁定全部传递依赖版本。
+# 模型权重不在 pip 依赖内，需按 README「模型下载」手动获取（约 2.3GB）。
+# ============================================================
+
+# --- 向量库（锁定 0.33.x；>=0.34 将弃用 create_fts_index 旧语法）---
+lancedb>=0.33.0,<0.34.0
+# pyarrow 与 lancedb 0.33 存储格式绑定，建议保持 24.x（上限注释防漂移）
+pyarrow>=24.0.0,<26.0
+
+# --- 模型与嵌入 ---
+sentence-transformers>=2.0.0
+torch>=2.0.0
+transformers>=4.36.0
+numpy>=1.24.0
+pandas>=2.0.0
+# ONNX 推理路径（get_embedding_fn 的 _load_onnx_model 分支）
+onnxruntime>=1.16.0
+optimum>=1.16.0
+safetensors>=0.4.0
+tokenizers>=0.15.0
+
+# --- 工具 ---
+pyyaml>=6.0
+jieba>=0.42.1
+psutil>=5.9.0
+# 注意：modelscope 已在代码评审中确认未被 import，已移除（模型下载走 sentence_transformers.from_pretrained）

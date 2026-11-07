@@ -1,0 +1,24 @@
+# 版本控制 / IDE / OS
+.git/
+.claude/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+README.md
+
+# 屏蔽已完稿章节，省 token（大纲 00_*.md 保留，供每卷开头读取）
+正文/**/第*章*.md
+
+# 生成文件 / 缓存
+世界设定规则/设定/地图/世界地图.html
+世界设定规则/脚本/__pycache__/
+世界设定规则/脚本/.lancedb_data/
+世界设定规则/脚本/.hash_cache.json
+世界设定规则/脚本/.query_cache.json
+世界设定规则/脚本/.query_history.json
+世界设定规则/脚本/.semantic_cache.json
+世界设定规则/设定/地图编辑器.json
+
+# 详细设定（通过知识库按需检索，不需要直接读取）
+世界设定规则/设定/01_设定集/详细/
