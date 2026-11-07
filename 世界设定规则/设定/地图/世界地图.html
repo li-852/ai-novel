@@ -1,0 +1,1745 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>二陆三洲 - 世界地图</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a1a; color: #e0e0e0; font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
+
+    #map-container { width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; cursor: grab; }
+    #map-container:active { cursor: grabbing; }
+    #map-svg { max-width: 90vmin; max-height: 90vmin; transition: transform 0.1s; }
+
+    .region { transition: opacity 0.3s, filter 0.3s; cursor: pointer; }
+    .region:hover { opacity: 0.85; filter: brightness(1.3) drop-shadow(0 0 4px rgba(100,200,100,0.4)); }
+    .region.selected { filter: brightness(1.5) drop-shadow(0 0 8px rgba(100,200,100,0.6)); }
+
+    .landmark { cursor: pointer; transition: filter 0.2s, transform 0.2s; transform-box: fill-box; transform-origin: center; }
+    .landmark:hover { filter: brightness(1.6) drop-shadow(0 0 5px rgba(255,255,255,0.6)); transform: scale(1.15); }
+    @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 0.8; } }
+    .landmark-glow { animation: pulse 3s ease-in-out infinite; }
+
+    #info-panel {
+      position: fixed; top: 80px; right: 20px; width: 320px;
+      background: linear-gradient(135deg, rgba(15,15,35,0.98), rgba(25,25,50,0.95));
+      border: 1px solid rgba(100,100,200,0.3); border-radius: 16px;
+      padding: 24px; display: none; z-index: 1000;
+      backdrop-filter: blur(20px); box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+      animation: slideIn 0.3s ease;
+    }
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    #info-panel h2 { color: #8a8aff; margin-bottom: 16px; font-size: 20px; display: flex; align-items: center; gap: 10px; }
+    #info-panel .icon { font-size: 24px; }
+    .info-row { margin: 12px 0; display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { color: #8a8aaa; min-width: 70px; font-size: 13px; }
+    .info-value { color: #e0e0f0; font-size: 14px; }
+
+    .close-btn {
+      position: absolute; top: 12px; right: 12px;
+      background: rgba(255,255,255,0.1); border: none; color: #8a8aaa;
+      width: 28px; height: 28px; border-radius: 50%; font-size: 16px;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .close-btn:hover { background: rgba(255,100,100,0.3); color: #ff8888; }
+
+    #search-box { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; }
+    #search-input {
+      width: 280px; padding: 12px 20px;
+      background: rgba(15,15,35,0.95); border: 1px solid rgba(100,100,200,0.3);
+      border-radius: 25px; color: #e0e0f0; font-size: 14px; outline: none;
+      backdrop-filter: blur(20px); transition: all 0.3s;
+    }
+    #search-input:focus { border-color: #8a8aff; box-shadow: 0 0 20px rgba(100,100,255,0.3); }
+    #search-input::placeholder { color: #6a6a8a; }
+    #search-results {
+      position: absolute; top: 100%; left: 0; right: 0;
+      background: rgba(15,15,35,0.98); border: 1px solid rgba(100,100,200,0.3);
+      border-radius: 12px; margin-top: 8px; max-height: 300px; overflow-y: auto; display: none;
+    }
+    .search-item { padding: 12px 20px; cursor: pointer; transition: background 0.2s; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .search-item:hover { background: rgba(100,100,255,0.2); }
+    .search-item:last-child { border-bottom: none; }
+    .search-item .name { color: #e0e0f0; font-size: 14px; }
+    .search-item .type { color: #8a8aaa; font-size: 12px; margin-top: 4px; }
+
+    #legend {
+      position: fixed; bottom: 20px; left: 20px;
+      background: linear-gradient(135deg, rgba(15,15,35,0.98), rgba(25,25,50,0.95));
+      border: 1px solid rgba(100,100,200,0.3); border-radius: 16px;
+      padding: 20px; z-index: 1000; backdrop-filter: blur(20px); max-height: 80vh; overflow-y: auto;
+    }
+    #legend h3 { color: #8a8aff; margin-bottom: 16px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+    .legend-section { margin-bottom: 16px; }
+    .legend-section h4 { color: #aaaacc; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .legend-item { display: flex; align-items: center; gap: 10px; margin: 8px 0; padding: 4px 0; }
+    .legend-color { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2); }
+    .legend-text { font-size: 13px; color: #c0c0d0; }
+
+    #scale-bar { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 1000; }
+    .scale-bar-visual { width: 120px; height: 6px; background: linear-gradient(to right, #8a8aff, #4a4a8a); border-radius: 3px; position: relative; }
+    .scale-bar-visual::before, .scale-bar-visual::after { content: ''; position: absolute; width: 2px; height: 12px; background: #8a8aff; top: -3px; }
+    .scale-bar-visual::before { left: 0; }
+    .scale-bar-visual::after { right: 0; }
+    .scale-label { font-size: 11px; color: #8a8aaa; }
+
+    #compass { position: fixed; top: 80px; left: 20px; width: 70px; height: 70px; z-index: 1000; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5)); }
+    #compass svg { width: 100%; height: 100%; }
+
+    #coords { position: fixed; bottom: 60px; right: 20px; font-size: 12px; color: #6a6a8a; z-index: 1000; background: rgba(15,15,35,0.8); padding: 6px 12px; border-radius: 8px; }
+
+    #zoom-controls { position: fixed; bottom: 100px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 1000; }
+    .zoom-btn {
+      width: 40px; height: 40px;
+      background: rgba(15,15,35,0.95); border: 1px solid rgba(100,100,200,0.3);
+      border-radius: 10px; color: #8a8aff; font-size: 20px; cursor: pointer;
+      transition: all 0.2s; display: flex; align-items: center; justify-content: center;
+    }
+    .zoom-btn:hover { background: rgba(100,100,255,0.3); border-color: #8a8aff; }
+
+    #measure-tool { position: fixed; top: 20px; right: 20px; z-index: 1000; }
+    .measure-btn {
+      padding: 10px 16px;
+      background: rgba(15,15,35,0.95); border: 1px solid rgba(100,100,200,0.3);
+      border-radius: 10px; color: #8a8aff; font-size: 13px; cursor: pointer; transition: all 0.2s;
+    }
+    .measure-btn:hover { background: rgba(100,100,255,0.3); border-color: #8a8aff; }
+    .measure-btn.active { background: rgba(100,100,255,0.4); border-color: #aaaaff; }
+
+    #loading {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: #0a0a1a; z-index: 9999; font-size: 18px; color: #8a8aff;
+    }
+    #loading.error { color: #ff6666; }
+
+    /* ===== 编辑模式 ===== */
+    #edit-toggle { position: fixed; top: 20px; left: 95px; z-index: 1001; }
+    #edit-toggle button {
+      padding: 8px 16px; background: rgba(15,15,35,0.95); border: 1px solid rgba(100,100,200,0.3);
+      border-radius: 10px; color: #8a8aff; font-size: 13px; cursor: pointer; transition: all 0.2s;
+    }
+    #edit-toggle button:hover { background: rgba(100,100,255,0.3); }
+    #edit-toggle button.active { background: rgba(100,200,100,0.3); border-color: #6ac; color: #8f8; }
+
+    #edit-toolbar {
+      position: fixed; top: 80px; left: 20px; z-index: 1001; display: none;
+      background: linear-gradient(135deg, rgba(15,15,35,0.98), rgba(25,25,50,0.95));
+      border: 1px solid rgba(100,100,200,0.3); border-radius: 12px;
+      padding: 8px; backdrop-filter: blur(20px);
+    }
+    #edit-toolbar.visible { display: flex; flex-direction: column; gap: 4px; }
+    .tool-btn {
+      width: 40px; height: 40px; background: transparent; border: 1px solid transparent;
+      border-radius: 8px; color: #8a8aaa; font-size: 18px; cursor: pointer;
+      transition: all 0.15s; display: flex; align-items: center; justify-content: center;
+    }
+    .tool-btn:hover { background: rgba(100,100,255,0.2); color: #aaa; }
+    .tool-btn.active { background: rgba(100,100,255,0.35); border-color: #8a8aff; color: #fff; }
+    .tool-sep { height: 1px; background: rgba(100,100,200,0.2); margin: 4px 0; }
+
+    #edit-props {
+      position: fixed; top: 80px; right: 20px; width: 300px; max-height: 75vh; overflow-y: auto;
+      background: linear-gradient(135deg, rgba(15,15,35,0.98), rgba(25,25,50,0.95));
+      border: 1px solid rgba(100,100,200,0.3); border-radius: 16px;
+      padding: 20px; display: none; z-index: 1001;
+      backdrop-filter: blur(20px); box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    }
+    #edit-props.visible { display: block; }
+    #edit-props h3 { color: #8a8aff; margin-bottom: 12px; font-size: 16px; }
+    .prop-row { margin-bottom: 10px; }
+    .prop-row label { display: block; color: #8a8aaa; font-size: 12px; margin-bottom: 4px; }
+    .prop-row input, .prop-row select, .prop-row textarea {
+      width: 100%; padding: 6px 10px; background: rgba(10,10,30,0.8);
+      border: 1px solid rgba(100,100,200,0.25); border-radius: 6px;
+      color: #e0e0f0; font-size: 13px; outline: none;
+    }
+    .prop-row input:focus, .prop-row select:focus, .prop-row textarea:focus { border-color: #8a8aff; }
+    .prop-row input[type="color"] { height: 34px; padding: 2px 4px; cursor: pointer; }
+    .prop-row textarea { min-height: 50px; resize: vertical; font-family: inherit; }
+    .prop-actions { display: flex; gap: 8px; margin-top: 14px; }
+    .prop-actions button {
+      flex: 1; padding: 8px; border: 1px solid rgba(100,100,200,0.3); border-radius: 8px;
+      font-size: 13px; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-save-props { background: rgba(100,200,100,0.2); color: #8f8; }
+    .btn-save-props:hover { background: rgba(100,200,100,0.35); }
+    .btn-delete { background: rgba(200,100,100,0.2); color: #f88; }
+    .btn-delete:hover { background: rgba(200,100,100,0.35); }
+
+    #edit-save-bar {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1001;
+      display: none; gap: 10px;
+    }
+    #edit-save-bar.visible { display: flex; }
+    #edit-save-bar button {
+      padding: 10px 24px; border-radius: 10px; font-size: 14px; cursor: pointer;
+      transition: all 0.2s; border: 1px solid rgba(100,100,200,0.3);
+    }
+    .bar-save { background: rgba(100,200,100,0.3); color: #8f8; }
+    .bar-save:hover { background: rgba(100,200,100,0.5); }
+    .bar-discard { background: rgba(200,100,100,0.2); color: #f88; }
+    .bar-discard:hover { background: rgba(200,100,100,0.35); }
+
+    .edit-selected { filter: brightness(1.4) drop-shadow(0 0 6px rgba(100,200,255,0.6)) !important; }
+    .control-point {
+      cursor: move; transition: r 0.15s, fill 0.15s;
+    }
+    .control-point:hover { r: 1.2; fill: #ffaa44; }
+
+    .edit-mode .region { cursor: move; }
+    .edit-mode .landmark { cursor: move; }
+    .edit-mode #map-container { cursor: default; }
+
+    .edit-hint {
+      position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); z-index: 1001;
+      background: rgba(15,15,35,0.9); border: 1px solid rgba(100,100,200,0.3);
+      border-radius: 8px; padding: 8px 16px; font-size: 12px; color: #8a8aaa;
+      display: none; pointer-events: none;
+    }
+    .edit-hint.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div id="loading">加载中...</div>
+
+  <div id="search-box">
+    <label for="search-input"></label><input type="text" id="search-input" placeholder="搜索区域、地标..." autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+
+  <div id="compass">
+    <svg viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="45" fill="rgba(15,15,35,0.9)" stroke="rgba(100,100,200,0.3)" stroke-width="2"/>
+      <polygon points="50,10 45,40 50,35 55,40" fill="#ff4444"/>
+      <polygon points="50,90 45,60 50,65 55,60" fill="#4a4a6a"/>
+      <text x="50" y="8" text-anchor="middle" fill="#ff4444" font-size="14" font-weight="bold">N</text>
+      <text x="50" y="98" text-anchor="middle" fill="#4a4a6a" font-size="10">S</text>
+      <text x="5" y="53" text-anchor="middle" fill="#4a4a6a" font-size="10">W</text>
+      <text x="95" y="53" text-anchor="middle" fill="#4a4a6a" font-size="10">E</text>
+    </svg>
+  </div>
+
+  <div id="measure-tool">
+    <button class="measure-btn" id="measure-btn" onclick="toggleMeasure()">📏 测量距离</button>
+  </div>
+
+  <div id="edit-toggle">
+    <button id="edit-btn" onclick="toggleEditMode()">✏️ 修改</button>
+  </div>
+
+  <div id="edit-toolbar">
+    <button class="tool-btn active" data-tool="select" title="选择/移动" onclick="setTool('select')">↖</button>
+    <button class="tool-btn" data-tool="reshape" title="编辑路径点" onclick="setTool('reshape')">◇</button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="add-landmark" title="添加地标" onclick="setTool('add-landmark')">📍</button>
+    <button class="tool-btn" data-tool="add-region" title="添加区域" onclick="setTool('add-region')">🗺️</button>
+    <div class="tool-sep"></div>
+    <button class="tool-btn" data-tool="add-forest" title="添加森林" onclick="setTool('add-forest')">🌲</button>
+    <button class="tool-btn" data-tool="add-mountain" title="添加山脉" onclick="setTool('add-mountain')">⛰️</button>
+    <button class="tool-btn" data-tool="add-river" title="添加河流" onclick="setTool('add-river')">〰️</button>
+    <button class="tool-btn" data-tool="add-lake" title="添加湖泊" onclick="setTool('add-lake')">💧</button>
+  </div>
+
+  <div id="edit-props"></div>
+
+  <div class="edit-hint" id="edit-hint"></div>
+
+  <div id="edit-save-bar">
+    <button class="bar-save" onclick="saveMapYAML()">💾 保存 YAML</button>
+    <button class="bar-discard" onclick="toggleEditMode()">✖ 退出编辑</button>
+  </div>
+
+  <div id="map-container">
+    <svg id="map-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="water-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#0d1f2d"/><stop offset="100%" stop-color="#0a1520"/>
+        </linearGradient>
+        <pattern id="water-waves" x="0" y="0" width="20" height="10" patternUnits="userSpaceOnUse">
+          <path d="M0,5 Q5,3 10,5 Q15,7 20,5" fill="none" stroke="#1a3a5c" stroke-width="0.3" opacity="0.3"/>
+          <path d="M0,8 Q5,6 10,8 Q15,10 20,8" fill="none" stroke="#1a3a5c" stroke-width="0.2" opacity="0.2"/>
+        </pattern>
+        <pattern id="forest" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="2" r="1.2" fill="#1a5c1a" opacity="0.6"/>
+          <circle cx="0" cy="0" r="0.8" fill="#1a5c1a" opacity="0.3"/>
+          <circle cx="4" cy="4" r="0.8" fill="#1a5c1a" opacity="0.3"/>
+        </pattern>
+        <pattern id="desert" x="0" y="0" width="3" height="3" patternUnits="userSpaceOnUse">
+          <circle cx="1.5" cy="1.5" r="0.6" fill="#5c4a1a" opacity="0.4"/>
+        </pattern>
+        <pattern id="swamp" x="0" y="0" width="6" height="6" patternUnits="userSpaceOnUse">
+          <path d="M0,6 Q3,4 6,6" fill="none" stroke="#2a4a3a" stroke-width="0.5" opacity="0.6"/>
+          <path d="M0,3 Q3,1 6,3" fill="none" stroke="#2a4a3a" stroke-width="0.3" opacity="0.3"/>
+        </pattern>
+        <pattern id="ice" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
+          <line x1="0" y1="0" x2="8" y2="8" stroke="#8ab4f8" stroke-width="0.3" opacity="0.4"/>
+          <line x1="8" y1="0" x2="0" y2="8" stroke="#8ab4f8" stroke-width="0.3" opacity="0.4"/>
+          <line x1="4" y1="0" x2="4" y2="8" stroke="#8ab4f8" stroke-width="0.2" opacity="0.2"/>
+        </pattern>
+        <pattern id="highland" x="0" y="0" width="5" height="5" patternUnits="userSpaceOnUse">
+          <path d="M0,5 L2.5,0 L5,5" fill="none" stroke="#6a6a6a" stroke-width="0.4" opacity="0.5"/>
+        </pattern>
+        <radialGradient id="volcano-glow">
+          <stop offset="0%" stop-color="#ff4400" stop-opacity="0.8"/>
+          <stop offset="50%" stop-color="#ff4400" stop-opacity="0.3"/>
+          <stop offset="100%" stop-color="#ff4400" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="landmark-glow">
+          <stop offset="0%" stop-color="#ffffff" stop-opacity="0.6"/>
+          <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="xihe-gradient" cx="50%" cy="40%">
+          <stop offset="0%" stop-color="#2a5a3a"/><stop offset="100%" stop-color="#1a3a2a"/>
+        </radialGradient>
+        <radialGradient id="zhuyin-gradient" cx="50%" cy="50%">
+          <stop offset="0%" stop-color="#5a2a2a"/><stop offset="100%" stop-color="#3a1a1a"/>
+        </radialGradient>
+        <radialGradient id="zhou-gradient" cx="50%" cy="40%">
+          <stop offset="0%" stop-color="#2a4a3a"/><stop offset="100%" stop-color="#1a3a2a"/>
+        </radialGradient>
+        <radialGradient id="zhou-blue-gradient" cx="50%" cy="40%">
+          <stop offset="0%" stop-color="#3a3a5a"/><stop offset="100%" stop-color="#2a2a4a"/>
+        </radialGradient>
+        <filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.5"/></filter>
+      </defs>
+      <rect x="0" y="0" width="100" height="100" fill="url(#water-gradient)"/>
+      <rect x="0" y="0" width="100" height="100" fill="url(#water-waves)"/>
+      <g id="grid" opacity="0.1">
+        <line x1="0" y1="20" x2="100" y2="20" stroke="#4a4a6a" stroke-width="0.1"/>
+        <line x1="0" y1="40" x2="100" y2="40" stroke="#4a4a6a" stroke-width="0.1"/>
+        <line x1="0" y1="60" x2="100" y2="60" stroke="#4a4a6a" stroke-width="0.1"/>
+        <line x1="0" y1="80" x2="100" y2="80" stroke="#4a4a6a" stroke-width="0.1"/>
+        <line x1="20" y1="0" x2="20" y2="100" stroke="#4a4a6a" stroke-width="0.1"/>
+        <line x1="40" y1="0" x2="40" y2="100" stroke="#4a4a6a" stroke-width="0.1"/>
+        <line x1="60" y1="0" x2="60" y2="100" stroke="#4a4a6a" stroke-width="0.1"/>
+        <line x1="80" y1="0" x2="80" y2="100" stroke="#4a4a6a" stroke-width="0.1"/>
+      </g>
+      <g id="regions"></g>
+      <g id="decorations"></g>
+      <g id="subregion-labels" fill="#6a6a8a" font-size="1.8" text-anchor="middle"></g>
+      <g id="region-labels" text-anchor="middle" font-weight="bold"></g>
+      <g id="landmarks"></g>
+    </svg>
+  </div>
+
+  <div id="info-panel">
+    <button class="close-btn" onclick="closePanel()">×</button>
+    <h2 id="info-title"></h2>
+    <div id="info-content"></div>
+  </div>
+
+  <div id="legend"><h3>🗺️ 图例</h3><div id="legend-content"></div></div>
+
+  <div id="scale-bar"><div class="scale-bar-visual"></div><span class="scale-label">10 单位</span></div>
+  <div id="coords">x: 0, y: 0</div>
+
+  <div id="zoom-controls">
+    <button class="zoom-btn" onclick="zoomIn()">+</button>
+    <button class="zoom-btn" onclick="zoomOut()">−</button>
+    <button class="zoom-btn" onclick="resetView()">⌂</button>
+  </div>
+
+  <script>
+    // ============================================================
+    // YAML 解析器（支持 world_map.yaml 使用的子集）
+    // 支持：块映射、块序列、流序列 [a,b]、流映射 {k:v}、
+    //       引号字符串、数字、布尔、null、注释、多行标量
+    // ============================================================
+    const YAML = {
+      parse(text) {
+        const lines = text.split('\n');
+        return this._parseBlock(lines, 0).value;
+      },
+
+      _getIndent(line) {
+        return line.match(/^(\s*)/)[1].length;
+      },
+
+      // 块级解析：返回 { indent, value, nextIndex }
+      _parseBlock(lines, startIdx) {
+        let i = startIdx;
+
+        // 跳过空行和注释
+        while (i < lines.length) {
+          const t = lines[i].trim();
+          if (t === '' || t.startsWith('#')) { i++; continue; }
+          break;
+        }
+
+        if (i >= lines.length) return { indent: -1, value: null, nextIndex: i };
+
+        const indent = this._getIndent(lines[i]);
+        const first = lines[i].trim();
+
+        // 块序列：以 "- " 开头
+        if (first.startsWith('- ') || first === '-') {
+          return this._parseSequence(lines, i, indent);
+        }
+
+        // 块映射
+        return this._parseMapping(lines, i, indent);
+      },
+
+      // 块序列解析
+      _parseSequence(lines, startIdx, indent) {
+        const result = [];
+        let i = startIdx;
+
+        while (i < lines.length) {
+          const line = lines[i];
+          const lineIndent = this._getIndent(line);
+          const trimmed = line.trim();
+
+          // 跳过空行和注释
+          if (trimmed === '' || trimmed.startsWith('#')) { i++; continue; }
+
+          // 缩进小于序列缩进 → 序列结束
+          if (lineIndent < indent) break;
+
+          // 同级非 "- " 行 → 序列结束
+          if (lineIndent === indent && !trimmed.startsWith('- ') && trimmed !== '-') break;
+
+          // "- " 后跟内容
+          if (trimmed.startsWith('- ')) {
+            const after = trimmed.substring(2).trim();
+
+            // "- key: value" → 行内映射
+            if (after.includes(': ')) {
+              const inline = this._parseInlineMapping(lines, i, indent + 2);
+              result.push(inline.value);
+              i = inline.nextIndex;
+            }
+            // "- [1,2,3]" → 流序列
+            else if (after.startsWith('[')) {
+              result.push(this._parseFlowSequence(after));
+              i++;
+            }
+            // "- value" → 普通值
+            else {
+              result.push(this._parseScalar(after));
+              i++;
+            }
+          }
+          // 缩进更深 → 嵌套块
+          else if (lineIndent > indent) {
+            const nested = this._parseBlock(lines, i);
+            result.push(nested.value);
+            i = nested.nextIndex;
+          } else {
+            i++;
+          }
+        }
+
+        return { indent, value: result, nextIndex: i };
+      },
+
+      // 块映射解析
+      _parseMapping(lines, startIdx, indent) {
+        const result = {};
+        let i = startIdx;
+
+        while (i < lines.length) {
+          const line = lines[i];
+          const lineIndent = this._getIndent(line);
+          const trimmed = line.trim();
+
+          if (trimmed === '' || trimmed.startsWith('#')) { i++; continue; }
+          if (lineIndent < indent) break;
+          if (lineIndent > indent) { i++; continue; }
+
+          const colonIdx = trimmed.indexOf(':');
+          if (colonIdx === -1) { i++; continue; }
+
+          const key = trimmed.substring(0, colonIdx).trim();
+          const after = trimmed.substring(colonIdx + 1).trim();
+
+          // key: [] / key: {} 流式内联
+          if (after.startsWith('[')) {
+            result[key] = this._parseFlowSequence(after);
+            i++;
+          } else if (after.startsWith('{')) {
+            result[key] = this._parseFlowMapping(after);
+            i++;
+          }
+          // key: value（标量值）
+          else if (after !== '') {
+            result[key] = this._parseScalar(after);
+            i++;
+          }
+          // key: 后面是嵌套块
+          else {
+            const nested = this._parseBlock(lines, i + 1);
+            if (nested.nextIndex === i + 1) {
+              result[key] = null;
+              i++;
+            } else {
+              result[key] = nested.value;
+              i = nested.nextIndex;
+            }
+          }
+        }
+
+        return { indent, value: result, nextIndex: i };
+      },
+
+      // 查找下一个非空非注释行的索引
+      _nextNonEmpty(lines, start) {
+        for (let i = start; i < lines.length; i++) {
+          const t = lines[i].trim();
+          if (t !== '' && !t.startsWith('#')) return i;
+        }
+        return null;
+      },
+
+      // 行内映射解析（用于 "- key: value" 场景）
+      _parseInlineMapping(lines, startIdx, expectedIndent) {
+        const result = {};
+        let i = startIdx;
+
+        const trimmed = lines[i].trim();
+        const after = trimmed.substring(trimmed.indexOf('- ') + 2).trim();
+        const colonIdx = after.indexOf(':');
+        const key = after.substring(0, colonIdx).trim();
+        const val = after.substring(colonIdx + 1).trim();
+
+        if (val.startsWith('{')) {
+          result[key] = this._parseFlowMapping(val);
+          i++;
+        } else if (val.startsWith('[')) {
+          result[key] = this._parseFlowSequence(val);
+          i++;
+        } else if (val !== '') {
+          result[key] = this._parseScalar(val);
+          i++;
+        } else {
+          // 值在后续嵌套行
+          const nested = this._parseBlock(lines, i + 1);
+          if (nested.nextIndex > i + 1) {
+            result[key] = nested.value;
+            i = nested.nextIndex;
+          } else {
+            result[key] = null;
+            i++;
+          }
+          return { value: result, nextIndex: i };
+        }
+
+        // 检查后续同缩进行是否属于同一映射
+        while (i < lines.length) {
+          const next = lines[i];
+          const nextTrimmed = next.trim();
+          if (nextTrimmed === '' || nextTrimmed.startsWith('#')) { i++; continue; }
+          const nextIndent = this._getIndent(next);
+          if (nextIndent < expectedIndent) break;
+          if (nextTrimmed.startsWith('- ')) break;
+          const ci = nextTrimmed.indexOf(':');
+          if (ci === -1) break;
+          const nk = nextTrimmed.substring(0, ci).trim();
+          const nv = nextTrimmed.substring(ci + 1).trim();
+          if (nk === '' || nv !== '') {
+            result[nk] = this._parseScalar(nv);
+          }
+          i++;
+        }
+
+        return { value: result, nextIndex: i };
+      },
+
+      // 流序列解析 [a, b, c]
+      _parseFlowSequence(str) {
+        const inner = str.slice(1, -1).trim();
+        if (!inner) return [];
+
+        const parts = this._splitFlow(inner);
+        return parts.map(p => {
+          p = p.trim();
+          if (p.startsWith('{')) return this._parseFlowMapping(p);
+          if (p.startsWith('[')) return this._parseFlowSequence(p);
+          return this._parseScalar(p);
+        });
+      },
+
+      // 流映射解析 {k: v, k2: v2}
+      _parseFlowMapping(str) {
+        const inner = str.slice(1, -1).trim();
+        if (!inner) return {};
+
+        const result = {};
+        const pairs = this._splitFlow(inner);
+
+        for (const pair of pairs) {
+          const ci = pair.indexOf(':');
+          if (ci === -1) continue;
+          const key = pair.substring(0, ci).trim();
+          let val = pair.substring(ci + 1).trim();
+          if (val.startsWith('[')) val = this._parseFlowSequence(val);
+          else if (val.startsWith('{')) val = this._parseFlowMapping(val);
+          else val = this._parseScalar(val);
+          result[key] = val;
+        }
+        return result;
+      },
+
+      // 分割流式结构（尊重括号嵌套和引号）
+      _splitFlow(str) {
+        const parts = [];
+        let depth = 0, inQuote = false, quoteChar = '', current = '';
+        for (let idx = 0; idx < str.length; idx++) {
+          const ch = str[idx];
+          if (inQuote) {
+            current += ch;
+            if (ch === '\\') { current += str[++idx]; continue; }
+            if (ch === quoteChar) inQuote = false;
+            continue;
+          }
+          if (ch === '"' || ch === "'") { inQuote = true; quoteChar = ch; current += ch; continue; }
+          if (ch === '[' || ch === '{') depth++;
+          else if (ch === ']' || ch === '}') depth--;
+          else if (ch === ',' && depth === 0) { parts.push(current); current = ''; continue; }
+          current += ch;
+        }
+        if (current.trim()) parts.push(current);
+        return parts;
+      },
+
+      // 标量解析
+      _parseScalar(str) {
+        if (str === '' || str === 'null' || str === '~') return null;
+        if (str === 'true') return true;
+        if (str === 'false') return false;
+        if (/^-?\d+(\.\d+)?$/.test(str)) return Number(str);
+        if ((str.startsWith('"') && str.endsWith('"')) ||
+            (str.startsWith("'") && str.endsWith("'")))
+          return str.slice(1, -1);
+        // 去掉行尾注释
+        const hashIdx = str.indexOf(' #');
+        if (hashIdx > 0) return str.substring(0, hashIdx).trim();
+        return str;
+      }
+    };
+
+    // ============================================================
+    // 数据加载：从 world_map.yaml 读取并转换为渲染用数据结构
+    // ============================================================
+    async function loadData() {
+      const resp = await fetch('world_map.yaml');
+      if (!resp.ok) throw new Error(`无法加载 world_map.yaml (${resp.status})`);
+      const text = await resp.text();
+      return YAML.parse(text);
+    }
+
+    function buildMapData(data) {
+      // 区域
+      const REGIONS = Object.entries(data.regions || {}).map(([name, r]) => ({
+        id: name, path: r.path, fill: r.fill, stroke: r.stroke,
+        strokeWidth: r.stroke_width, ruler: r.ruler, philosophy: r.philosophy,
+        description: r.description, powerLevel: r.power_level,
+        subRegions: r.sub_regions ? Object.entries(r.sub_regions).map(([subName, s]) => ({
+          name: subName, center: s.center, description: s.description, terrain: s.terrain
+        })) : []
+      }));
+
+      // 势力
+      const FACTIONS = Object.entries(data.factions || {}).map(([name, f]) => ({
+        name, type: f.type, alignment: f.alignment,
+        regions: f.regions, allies: f.allies, enemies: f.enemies, description: f.description
+      }));
+
+      // 地标（合并 landmarks + extra_landmarks）
+      const LANDMARKS = [
+        ...Object.entries(data.landmarks || {}).map(([name, l]) => ({ name, ...l })),
+        ...Object.entries(data.extra_landmarks || {}).map(([name, l]) => ({ name, ...l }))
+      ];
+
+      // 势力配色（从区域数据提取）
+      const FACTION_COLORS = {};
+      for (const [name, r] of Object.entries(data.regions || {})) {
+        const ruler = r.ruler;
+        if (ruler && !FACTION_COLORS[ruler]) {
+          FACTION_COLORS[ruler] = { fill: r.fill, stroke: r.stroke, text: '#8a8aaa' };
+        }
+      }
+
+      return {
+        MAP_CONFIG: data.map || { width: 100, height: 100, background: '#0a0a1a' },
+        REGIONS, FACTIONS, LANDMARKS,
+        TERRAIN: data.terrain || {},
+        DECORATIONS: data.decorations || {},
+        FACTION_COLORS,
+        labelPositions: data.label_positions || {}
+      };
+    }
+
+    // ============================================================
+    // 渲染与交互（数据驱动，无硬编码）
+    // ============================================================
+    let scale = 1, panX = 0, panY = 0, isPanning = false, startX, startY;
+    let selectedRegion = null, measureMode = false, measurePoints = [];
+
+    const svg = document.getElementById('map-svg');
+    const container = document.getElementById('map-container');
+    const infoPanel = document.getElementById('info-panel');
+    const infoTitle = document.getElementById('info-title');
+    const infoContent = document.getElementById('info-content');
+    const coordsDisplay = document.getElementById('coords');
+    const searchInput = document.getElementById('search-input');
+    const searchResultsEl = document.getElementById('search-results');
+    const loadingEl = document.getElementById('loading');
+
+    function svgEl(tag, attrs) {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+      return el;
+    }
+
+    function createCircle(cx, cy, r, fill, opacity) {
+      const attrs = { cx, cy, r, fill };
+      if (opacity !== undefined) attrs.opacity = opacity;
+      return svgEl('circle', attrs);
+    }
+
+    function createTriangle(cx, cy, r, fill, opacity) {
+      const h = r * 1.5;
+      return svgEl('polygon', {
+        points: `${cx-r},${cy+h/3} ${cx},${cy-h*2/3} ${cx+r},${cy+h/3}`,
+        fill, ...(opacity !== undefined ? { opacity } : {})
+      });
+    }
+
+    function createMountain(cx, cy, r) {
+      const h = r * 1.8;
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      // 山体阴影
+      g.appendChild(svgEl('polygon', { points: `${cx-r*0.8},${cy+h/3} ${cx-r*0.1},${cy-h*0.5} ${cx+r*0.3},${cy+h/3}`, fill: '#3a3a3a', opacity: 0.7 }));
+      // 山体主体
+      g.appendChild(svgEl('polygon', { points: `${cx-r*0.6},${cy+h/3} ${cx},${cy-h*0.6} ${cx+r*0.6},${cy+h/3}`, fill: '#5a5a5a', opacity: 0.8 }));
+      // 雪顶
+      g.appendChild(svgEl('polygon', { points: `${cx-r*0.15},${cy-h*0.35} ${cx},${cy-h*0.6} ${cx+r*0.15},${cy-h*0.35}`, fill: '#aaaaaa', opacity: 0.6 }));
+      return g;
+    }
+
+    function renderMap(md) {
+      const { REGIONS, DECORATIONS, FACTIONS, LANDMARKS, TERRAIN, FACTION_COLORS } = md;
+
+      // 区域
+      const regionsG = document.getElementById('regions');
+      const regionGradients = { '曦和大陆': 'url(#xihe-gradient)', '烛阴大陆': 'url(#zhuyin-gradient)', '无间洲': 'url(#zhou-blue-gradient)' };
+      REGIONS.forEach(r => {
+        const fill = regionGradients[r.id] || r.fill;
+        // 海岸光晕
+        const glow = svgEl('path', { d: r.path, fill: 'none', stroke: '#4a8a6a', 'stroke-width': 1.2, opacity: 0.15 });
+        regionsG.appendChild(glow);
+        const path = svgEl('path', { d: r.path, fill, stroke: r.stroke, 'stroke-width': r.strokeWidth });
+        path.classList.add('region');
+        Object.assign(path.dataset, { name: r.id, ruler: r.ruler, philosophy: r.philosophy, description: r.description, power: r.powerLevel });
+        regionsG.appendChild(path);
+      });
+
+      // 地形装饰
+      const decorG = document.getElementById('decorations');
+      Object.values(DECORATIONS).forEach(decor => {
+        (decor.forests || []).forEach(f => {
+          if (!f.center) return;
+          decorG.appendChild(createCircle(f.center[0], f.center[1], f.radius, 'url(#forest)', 0.7));
+          // 森林边缘散点
+          for (let i = 0; i < 5; i++) {
+            const angle = (i / 5) * Math.PI * 2 + f.center[0] * 0.5;
+            const dist = f.radius * (0.7 + Math.sin(i * 2.3) * 0.3);
+            decorG.appendChild(createCircle(f.center[0] + Math.cos(angle) * dist, f.center[1] + Math.sin(angle) * dist, 0.5, '#1a5c1a', 0.4));
+          }
+        });
+        (decor.mountains || []).forEach(m => { if (m.center) decorG.appendChild(createMountain(m.center[0], m.center[1], m.radius)); });
+        (decor.rivers || []).forEach(rv => {
+          if (!rv.path) return;
+          // 河流光晕
+          decorG.appendChild(svgEl('path', { d: rv.path, fill: 'none', stroke: '#4a8ab0', 'stroke-width': (rv.width || 0.4) + 0.6, opacity: '0.2', 'stroke-linecap': 'round' }));
+          decorG.appendChild(svgEl('path', { d: rv.path, fill: 'none', stroke: '#2a5a8a', 'stroke-width': rv.width || 0.4, opacity: '0.9', 'stroke-linecap': 'round' }));
+        });
+        (decor.lakes || []).forEach(l => {
+          if (!l.center) return;
+          decorG.appendChild(createCircle(l.center[0], l.center[1], l.radius + 0.3, '#2a6a8c', 0.2));
+          decorG.appendChild(createCircle(l.center[0], l.center[1], l.radius, '#1a4a6c', 0.7));
+          decorG.appendChild(createCircle(l.center[0] - l.radius * 0.3, l.center[1] - l.radius * 0.3, l.radius * 0.4, '#3a7a9c', 0.3));
+        });
+        (decor.ruins || []).forEach(ru => { if (ru.center) decorG.appendChild(createCircle(ru.center[0], ru.center[1], ru.radius, '#5a5a5a', 0.5)); });
+        (decor.deserts || []).forEach(d => { if (d.center) decorG.appendChild(createCircle(d.center[0], d.center[1], d.radius, 'url(#desert)', 0.6)); });
+        (decor.volcano || []).forEach(v => {
+          if (!v.center) return;
+          decorG.appendChild(createCircle(v.center[0], v.center[1], v.radius * 1.2, 'url(#volcano-glow)'));
+          decorG.appendChild(createTriangle(v.center[0], v.center[1], v.radius * 0.7, '#6b0000', 0.9));
+          decorG.appendChild(createTriangle(v.center[0], v.center[1], v.radius * 0.35, '#ff4400', 0.7));
+          // 火山灰烬粒子
+          for (let i = 0; i < 3; i++) {
+            const ox = (Math.sin(i * 2.1 + v.center[0]) * 0.5) * v.radius * 0.4;
+            const oy = -v.radius * 0.5 - i * 0.8;
+            decorG.appendChild(createCircle(v.center[0] + ox, v.center[1] + oy, 0.3, '#ff6600', 0.4 - i * 0.1));
+          }
+        });
+        (decor.swamp || []).forEach(s => { if (s.center) decorG.appendChild(createCircle(s.center[0], s.center[1], s.radius, 'url(#swamp)', 0.7)); });
+        (decor.highlands || []).forEach(h => {
+          if (!h.center) return;
+          decorG.appendChild(createTriangle(h.center[0] - 2, h.center[1], h.radius * 0.5, '#5a5a5a', 0.5));
+          decorG.appendChild(createTriangle(h.center[0] + 2, h.center[1] - 3, h.radius * 0.5, '#6a6a6a', 0.5));
+          decorG.appendChild(createTriangle(h.center[0] + 1, h.center[1] + 2, h.radius * 0.4, '#4a4a4a', 0.4));
+        });
+        (decor.ice || []).forEach(ic => {
+          if (!ic.center) return;
+          decorG.appendChild(createCircle(ic.center[0], ic.center[1], ic.radius, 'url(#ice)', 0.6));
+          // 冰晶反光
+          for (let j = 0; j < 4; j++) {
+            const angle = (j / 4) * Math.PI * 2;
+            const dist = ic.radius * 0.6;
+            decorG.appendChild(svgEl('line', {
+              x1: ic.center[0] + Math.cos(angle) * dist * 0.3, y1: ic.center[1] + Math.sin(angle) * dist * 0.3,
+              x2: ic.center[0] + Math.cos(angle) * dist, y2: ic.center[1] + Math.sin(angle) * dist,
+              stroke: '#aae4ff', 'stroke-width': 0.3, opacity: 0.5
+            }));
+          }
+        });
+      });
+
+      // 子区域标签
+      const subG = document.getElementById('subregion-labels');
+      REGIONS.forEach(r => r.subRegions.forEach(sub => {
+        if (!sub.center) return;
+        const t = svgEl('text', { x: sub.center[0], y: sub.center[1], opacity: '0.8' });
+        t.textContent = sub.name;
+        subG.appendChild(t);
+      }));
+
+      // 区域标签
+      const labelG = document.getElementById('region-labels');
+      const defaultLabelPos = { '曦和大陆': [50,58], '烛阴大陆': [20,59], '不死洲': [33,30], '无间洲': [20,20], '铸星洲': [50,24] };
+      const labelSz = { '曦和大陆': 3, '烛阴大陆': 3 };
+      // labelPositions 存在 mapDataSource 中，可被拖拽修改
+      const savedLP = (md.labelPositions || {});
+      REGIONS.forEach((r, idx) => {
+        const pos = savedLP[r.id] || defaultLabelPos[r.id];
+        if (!pos) return;
+        const colors = FACTION_COLORS[r.ruler] || { text: '#8a8aaa' };
+        const t = svgEl('text', { x: pos[0], y: pos[1], fill: colors.text, 'font-size': labelSz[r.id] || 2.5, filter: 'url(#shadow)' });
+        t.textContent = r.id;
+        t.classList.add('region-label');
+        t.dataset.regionIdx = idx;
+        t.dataset.regionId = r.id;
+        if (editMode) {
+          t.style.cursor = 'move';
+          t.addEventListener('mousedown', e => startLabelDrag(e, r.id, t));
+        }
+        labelG.appendChild(t);
+      });
+
+      // 地标
+      const lmG = document.getElementById('landmarks');
+      const iconChar = { ruins:'⚔', hideout:'⌂', volcano:'▲', swamp:'☠', ice:'❄', mountain:'⛰', city:'🏰', valley:'🌀', settlement:'🏠' };
+      LANDMARKS.forEach(lm => {
+        if (!lm.position || !lm.name) return;
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.classList.add('landmark');
+        Object.assign(g.dataset, { name: lm.name, description: lm.description, type: lm.type, danger: lm.danger_level });
+        if (lm.is_main_character_location) g.dataset.isMain = 'true';
+
+        const glowCircle = createCircle(lm.position[0], lm.position[1], 2.5, 'url(#landmark-glow)');
+        glowCircle.classList.add('landmark-glow');
+        g.appendChild(glowCircle);
+        g.appendChild(createCircle(lm.position[0], lm.position[1], 1.2, lm.color));
+
+        const icon = svgEl('text', { x: lm.position[0], y: lm.position[1], fill: 'white', 'font-size': '1.5', 'text-anchor': 'middle', dy: '0.4em' });
+        icon.textContent = iconChar[lm.type] || '📍';
+        g.appendChild(icon);
+
+        // 标签背景
+        const labelY = lm.position[1] + 3;
+        const bgRect = svgEl('rect', { x: lm.position[0] - 5, y: labelY - 1.2, width: 10, height: 1.8, rx: 0.4, fill: 'rgba(10,10,26,0.75)' });
+        g.appendChild(bgRect);
+        const label = svgEl('text', { x: lm.position[0], y: labelY, fill: lm.color, 'font-size': '1.2', 'text-anchor': 'middle', 'dominant-baseline': 'middle' });
+        label.textContent = lm.name;
+        g.appendChild(label);
+
+        lmG.appendChild(g);
+      });
+
+      // 图例
+      buildLegend(FACTIONS, TERRAIN, FACTION_COLORS);
+
+      // 搜索数据
+      buildSearchData(REGIONS, LANDMARKS, FACTIONS);
+    }
+
+    function buildLegend(FACTIONS, TERRAIN, FACTION_COLORS) {
+      let html = '<div class="legend-section"><h4>势力</h4>';
+      FACTIONS.forEach(f => {
+        const c = FACTION_COLORS[f.name] || { fill: '#2a2a2a' };
+        html += '<div class="legend-item"><div class="legend-color" style="background:' + c.fill + ';"></div><span class="legend-text">' + f.regions.join(',') + ' (' + f.name + ')</span></div>';
+      });
+      html += '</div><div class="legend-section"><h4>地形</h4>';
+      Object.values(TERRAIN).forEach(t => {
+        html += '<div class="legend-item"><div class="legend-color" style="background:' + t.color + ';"></div><span class="legend-text">' + t.name + '</span></div>';
+      });
+      html += '</div><div class="legend-section"><h4>地标</h4>';
+      [{c:'#ff4444',l:'遗迹/战场'},{c:'#4488ff',l:'隐居地'},{c:'#ffaa44',l:'城市'}].forEach(i => {
+        html += '<div class="legend-item"><div class="legend-color" style="background:' + i.c + ';width:12px;height:12px;border-radius:50%;"></div><span class="legend-text">' + i.l + '</span></div>';
+      });
+      html += '</div>';
+      document.getElementById('legend-content').innerHTML = html;
+    }
+
+    // ========== 搜索 ==========
+    const searchData = [];
+    function buildSearchData(REGIONS, LANDMARKS, FACTIONS) {
+      REGIONS.forEach(r => {
+        searchData.push({ name: r.id, type: '区域' });
+        r.subRegions.forEach(sub => searchData.push({ name: sub.name, type: '子区域', parent: r.id }));
+      });
+      LANDMARKS.forEach(lm => searchData.push({ name: lm.name, type: '地标' }));
+      FACTIONS.forEach(f => searchData.push({ name: f.name, type: '势力' }));
+    }
+
+    // ========== 缩放平移 ==========
+    // 屏幕坐标 → SVG viewBox 坐标（正确处理缩放平移 + CSS transform）
+    function screenToSVG(clientX, clientY) {
+      const pt = svg.createSVGPoint();
+      pt.x = clientX; pt.y = clientY;
+      // getScreenCTM 包含 SVG 内部变换（viewBox）+ CSS transform
+      const ctm = svg.getScreenCTM();
+      if (ctm) {
+        try { const svgPt = pt.matrixTransform(ctm.inverse()); return { x: svgPt.x, y: svgPt.y }; } catch(e) {}
+      }
+      // fallback：手动逆变换
+      const rect = svg.getBoundingClientRect();
+      const sx = (clientX - rect.left) / rect.width * 100;
+      const sy = (clientY - rect.top) / rect.height * 100;
+      return { x: (sx - panX / (rect.width / 100)) / scale, y: (sy - panY / (rect.height / 100)) / scale };
+    }
+
+    function updateTransform() { svg.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`; }
+    function zoomIn() { scale = Math.min(scale * 1.2, 5); updateTransform(); }
+    function zoomOut() { scale = Math.max(scale / 1.2, 0.5); updateTransform(); }
+    function resetView() { scale = 1; panX = 0; panY = 0; updateTransform(); }
+
+    container.addEventListener('wheel', e => {
+      e.preventDefault();
+      scale = Math.max(0.5, Math.min(5, scale * (e.deltaY > 0 ? 0.9 : 1.1)));
+      updateTransform();
+    });
+
+    container.addEventListener('mousedown', e => {
+      if (editMode) return; // 编辑模式不平移
+      if (e.button === 0 && !measureMode) { isPanning = true; startX = e.clientX - panX; startY = e.clientY - panY; container.style.cursor = 'grabbing'; }
+    });
+    document.addEventListener('mousemove', e => {
+      if (editMode) { onEditMouseMove(e); return; }
+      if (isPanning) { panX = e.clientX - startX; panY = e.clientY - startY; updateTransform(); }
+      const svgPt = screenToSVG(e.clientX, e.clientY);
+      coordsDisplay.textContent = `x: ${Math.round(svgPt.x)}, y: ${Math.round(svgPt.y)}`;
+    });
+    document.addEventListener('mouseup', e => {
+      if (editMode) { onEditMouseUp(e); return; }
+      isPanning = false; container.style.cursor = measureMode ? 'crosshair' : 'grab';
+    });
+
+    // ========== 交互 ==========
+    document.addEventListener('click', e => {
+      if (editMode) { editModeClick(e); return; }
+      const region = e.target.closest('.region');
+      if (region) {
+        e.stopPropagation();
+        if (measureMode) { addMeasurePoint(e); return; }
+        document.querySelectorAll('.region').forEach(r => r.classList.remove('selected'));
+        region.classList.add('selected');
+        const d = region.dataset;
+        showInfo(d.name, '🏛️', `
+          <div class="info-row"><span class="info-label">统治势力:</span><span class="info-value">${d.ruler}</span></div>
+          <div class="info-row"><span class="info-label">理念:</span><span class="info-value">${d.philosophy}</span></div>
+          <div class="info-row"><span class="info-label">实力等级:</span><span class="info-value">${'⭐'.repeat(d.power)} (${d.power}/10)</span></div>
+          <div class="info-row"><span class="info-label">描述:</span><span class="info-value">${d.description}</span></div>
+        `);
+        return;
+      }
+      const landmark = e.target.closest('.landmark');
+      if (landmark) {
+        e.stopPropagation();
+        if (measureMode) { addMeasurePoint(e); return; }
+        const d = landmark.dataset;
+        const extra = d.isMain === 'true' ? '<div class="info-row"><span class="info-label">状态:</span><span class="info-value" style="color:#ff8844;">★ 主角当前位置</span></div>' : '';
+        showInfo(d.name, getLandmarkIcon(d.type), `
+          <div class="info-row"><span class="info-label">类型:</span><span class="info-value">${getTypeName(d.type)}</span></div>
+          <div class="info-row"><span class="info-label">危险等级:</span><span class="info-value">${'⚠️'.repeat(parseInt(d.danger))} (${d.danger}/5)</span></div>
+          <div class="info-row"><span class="info-label">描述:</span><span class="info-value">${d.description}</span></div>
+          ${extra}
+        `);
+        return;
+      }
+      if (!e.target.closest('#info-panel')) {
+        if (measureMode) { addMeasurePoint(e); return; }
+        closePanel(); document.querySelectorAll('.region').forEach(r => r.classList.remove('selected'));
+      }
+    });
+
+    // ========== 搜索 ==========
+    searchInput.addEventListener('input', e => {
+      const q = e.target.value.trim().toLowerCase();
+      if (!q) { searchResultsEl.style.display = 'none'; return; }
+      const results = searchData.filter(item => item.name.toLowerCase().includes(q));
+      if (results.length) {
+        searchResultsEl.innerHTML = results.map(item => {
+          const nameEsc = item.name.replace(/'/g, "\\'");
+          return '<div class="search-item" onclick="searchSelect(\'' + nameEsc + '\',\'' + item.type + '\')"><div class="name">' + item.name + '</div><div class="type">' + item.type + (item.parent ? ' · ' + item.parent : '') + '</div></div>';
+        }).join('');
+        searchResultsEl.style.display = 'block';
+      } else { searchResultsEl.style.display = 'none'; }
+    });
+    searchInput.addEventListener('focus', () => { if (searchInput.value.trim()) searchResultsEl.style.display = 'block'; });
+    document.addEventListener('click', e => { if (!e.target.closest('#search-box')) searchResultsEl.style.display = 'none'; });
+
+    function searchSelect(name, type) {
+      searchResultsEl.style.display = 'none'; searchInput.value = '';
+      if (type === '区域') {
+        const el = document.querySelector(`.region[data-name="${name}"]`);
+        if (el) { el.click(); const b = el.getBBox(); panX = -(b.x + b.width/2 - 50) * 5; panY = -(b.y + b.height/2 - 50) * 5; scale = 1.5; updateTransform(); }
+      } else if (type === '地标') {
+        const el = document.querySelector(`.landmark[data-name="${name}"]`);
+        if (el) el.click();
+      }
+    }
+
+    // ========== 测量 ==========
+    function toggleMeasure() {
+      measureMode = !measureMode;
+      document.getElementById('measure-btn').classList.toggle('active');
+      container.style.cursor = measureMode ? 'crosshair' : 'grab';
+      if (!measureMode) clearMeasure();
+    }
+
+    function clearMeasure() {
+      measurePoints = [];
+      document.querySelectorAll('.measure-line').forEach(el => el.remove());
+    }
+
+    function addMeasurePoint(e) {
+      const pt = screenToSVG(e.clientX, e.clientY);
+      measurePoints.push(pt);
+
+      // 第一个点：画十字标记
+      if (measurePoints.length === 1) {
+        const s = 1.5;
+        const mark = svgEl('g', {});
+        mark.classList.add('measure-line');
+        mark.appendChild(svgEl('line', { x1: pt.x - s, y1: pt.y, x2: pt.x + s, y2: pt.y, stroke: '#ff8844', 'stroke-width': '0.3' }));
+        mark.appendChild(svgEl('line', { x1: pt.x, y1: pt.y - s, x2: pt.x, y2: pt.y + s, stroke: '#ff8844', 'stroke-width': '0.3' }));
+        svg.appendChild(mark);
+      }
+
+      // 第二个点：画线 + 距离
+      if (measurePoints.length === 2) {
+        const [p1, p2] = measurePoints;
+        const dist = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2).toFixed(1);
+        const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+
+        const g = svgEl('g', {});
+        g.classList.add('measure-line');
+        g.appendChild(svgEl('line', { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, stroke: '#ff8844', 'stroke-width': '0.4', 'stroke-dasharray': '1,0.5' }));
+        // 起止点标记
+        for (const p of [p1, p2]) {
+          const s = 0.8;
+          g.appendChild(svgEl('line', { x1: p.x - s, y1: p.y, x2: p.x + s, y2: p.y, stroke: '#ff8844', 'stroke-width': '0.3' }));
+          g.appendChild(svgEl('line', { x1: p.x, y1: p.y - s, x2: p.x, y2: p.y + s, stroke: '#ff8844', 'stroke-width': '0.3' }));
+        }
+        // 距离文字（带背景）
+        g.appendChild(svgEl('rect', { x: mx - 3, y: my - 2.2, width: 6, height: 2, rx: 0.5, fill: 'rgba(10,10,26,0.85)' }));
+        const text = svgEl('text', { x: mx, y: my - 0.8, fill: '#ff8844', 'font-size': '1.3', 'text-anchor': 'middle', 'dominant-baseline': 'middle' });
+        text.textContent = dist + ' 单位';
+        g.appendChild(text);
+        svg.appendChild(g);
+
+        measurePoints = [];
+      }
+    }
+
+    // ========== 工具 ==========
+    function showInfo(title, icon, content) { infoTitle.innerHTML = `<span class="icon">${icon}</span>${title}`; infoContent.innerHTML = content; infoPanel.style.display = 'block'; }
+    function closePanel() { infoPanel.style.display = 'none'; selectedRegion = null; }
+    function getTypeName(t) { return { ruins:'遗迹', hideout:'隐居地', volcano:'火山', swamp:'沼泽', ice:'冰原', mountain:'山脉', city:'城市', valley:'山谷', settlement:'聚落' }[t] || t; }
+    function getLandmarkIcon(t) { return { ruins:'🏛️', hideout:'🏠', volcano:'🌋', swamp:'💀', ice:'❄️', mountain:'⛰️', city:'🏰', valley:'🌀', settlement:'🏠' }[t] || '📍'; }
+
+    // ============================================================
+    // 编辑模式
+    // ============================================================
+    let editMode = false, editTool = 'select';
+    let editSelection = null; // { type: 'region'|'landmark'|'decoration', index, subType? }
+    let editDragging = null;  // { type, startX, startY, origData, started }
+    let editPathPoints = [];  // [{x, y}, ...] 当前选中区域的路径控制点
+    let editControlEls = [];  // SVG 控制点元素
+    let editNewRegionPoints = []; // 正在绘制的新区域点
+    let editSnapshot = null;  // 进入编辑模式时的数据快照
+    let editJustDragged = false; // 防止拖拽后触发 click
+    let editUndoStack = [];   // 撤销栈
+    const DRAG_THRESHOLD = 3; // SVG 坐标单位，防误触
+
+    const editPropsEl = document.getElementById('edit-props');
+    const editToolbarEl = document.getElementById('edit-toolbar');
+    const editSaveBarEl = document.getElementById('edit-save-bar');
+    const editHintEl = document.getElementById('edit-hint');
+
+    // --- SVG 路径解析/序列化 ---
+    function parseSVGPath(d) {
+      if (!d) return [];
+      const cmds = [];
+      const re = /([MmLlHhVvCcSsQqTtAaZz])\s*([^MmLlHhVvCcSsQqTtAaZz]*)/g;
+      let m;
+      while ((m = re.exec(d)) !== null) {
+        const type = m[1];
+        const nums = m[2].trim().length > 0 ? m[2].trim().split(/[\s,]+/).map(Number) : [];
+        cmds.push({ type, nums });
+      }
+      return cmds;
+    }
+
+    function pathToPoints(cmds) {
+      const pts = [];
+      let cx = 0, cy = 0;
+      for (const cmd of cmds) {
+        const { type, nums } = cmd;
+        switch (type) {
+          case 'M': cx = nums[0]; cy = nums[1]; pts.push({ x: cx, y: cy }); break;
+          case 'L': cx = nums[0]; cy = nums[1]; pts.push({ x: cx, y: cy }); break;
+          case 'H': cx = nums[0]; pts.push({ x: cx, y: cy }); break;
+          case 'V': cy = nums[0]; pts.push({ x: cx, y: cy }); break;
+          case 'Z': case 'z': break;
+          default: // 简化处理
+            for (let i = 0; i < nums.length - 1; i += 2) {
+              cx = nums[i]; cy = nums[i + 1]; pts.push({ x: cx, y: cy });
+            }
+        }
+      }
+      return pts;
+    }
+
+    function pointsToPathD(pts) {
+      if (!pts.length) return '';
+      return 'M' + pts.map(p => `${p.x},${p.y}`).join(' L') + ' Z';
+    }
+
+    // --- 模式切换 ---
+    function toggleEditMode() {
+      editMode = !editMode;
+      document.getElementById('edit-btn').classList.toggle('active', editMode);
+      editToolbarEl.classList.toggle('visible', editMode);
+      editSaveBarEl.classList.toggle('visible', editMode);
+      document.body.classList.toggle('edit-mode', editMode);
+
+      if (editMode) {
+        editSnapshot = JSON.parse(JSON.stringify(mapDataSource));
+        closePanel();
+        clearMeasure();
+        if (measureMode) toggleMeasure();
+        updateCursorAndHint();
+      } else {
+        editHintEl.classList.remove('visible');
+        document.getElementById('map-container').style.cursor = 'grab';
+        editSelection = null;
+        clearControlPoints();
+        editPropsEl.classList.remove('visible');
+      }
+    }
+
+    function setTool(tool) {
+      editTool = tool;
+      document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+      if (editNewRegionPoints.length) finishNewRegion();
+      editNewRegionPoints = [];
+      updateCursorAndHint();
+    }
+
+    function updateCursorAndHint() {
+      const hints = {
+        'select': '点击选择，拖拽移动',
+        'reshape': '点击区域显示控制点，拖拽点改变形状',
+        'add-landmark': '点击地图放置地标',
+        'add-region': '点击画多边形，双击或 Enter 完成',
+        'add-forest': '点击放置森林',
+        'add-mountain': '点击放置山脉',
+        'add-river': '点击放置河流',
+        'add-lake': '点击放置湖泊',
+      };
+      const cursors = {
+        'select': 'default', 'reshape': 'crosshair', 'add-landmark': 'cell',
+        'add-region': 'crosshair', 'add-forest': 'cell', 'add-mountain': 'cell',
+        'add-river': 'crosshair', 'add-lake': 'cell',
+      };
+      editHintEl.textContent = hints[editTool] || '';
+      editHintEl.classList.toggle('visible', !!hints[editTool]);
+      document.getElementById('map-container').style.cursor = cursors[editTool] || 'default';
+    }
+
+    // --- 选择 ---
+    function editSelect(type, index, subType) {
+      editSelection = { type, index, subType };
+      clearControlPoints();
+
+      // 高亮
+      document.querySelectorAll('.edit-selected').forEach(el => el.classList.remove('edit-selected'));
+
+      if (type === 'region') {
+        const el = document.querySelectorAll('.region')[index];
+        if (el) el.classList.add('edit-selected');
+        if (editTool === 'reshape') showRegionControlPoints(index);
+        showRegionProps(index);
+      } else if (type === 'landmark') {
+        const els = document.querySelectorAll('.landmark');
+        if (els[index]) els[index].classList.add('edit-selected');
+        showLandmarkProps(index);
+      }
+    }
+
+    function editDeselect() {
+      editSelection = null;
+      clearControlPoints();
+      document.querySelectorAll('.edit-selected').forEach(el => el.classList.remove('edit-selected'));
+      editPropsEl.classList.remove('visible');
+    }
+
+    // --- 控制点（路径编辑） ---
+    function clearControlPoints() {
+      editControlEls.forEach(el => el.remove());
+      editControlEls = [];
+      editPathPoints = [];
+    }
+
+    function showRegionControlPoints(index) {
+      clearControlPoints();
+      const region = mapDataSource.REGIONS[index];
+      if (!region) return;
+
+      const cmds = parseSVGPath(region.path);
+      editPathPoints = pathToPoints(cmds);
+
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('id', 'control-points-g');
+      editPathPoints.forEach((pt, i) => {
+        const c = svgEl('circle', { cx: pt.x, cy: pt.y, r: 1.0, fill: '#ff8844', stroke: '#fff', 'stroke-width': 0.4 });
+        c.classList.add('control-point');
+        c.dataset.idx = i;
+        c.addEventListener('mousedown', e => startControlPointDrag(e, i));
+        g.appendChild(c);
+        editControlEls.push(c);
+      });
+      svg.appendChild(g);
+      editControlEls.push(g);
+    }
+
+    function startControlPointDrag(e, idx) {
+      e.stopPropagation();
+      const pt = screenToSVG(e.clientX, e.clientY);
+      editDragging = { type: 'control-point', idx, startX: pt.x, startY: pt.y, origX: editPathPoints[idx].x, origY: editPathPoints[idx].y };
+    }
+
+    // --- 拖拽 ---
+    function startRegionDrag(e, index) {
+      e.stopPropagation();
+      const pt = screenToSVG(e.clientX, e.clientY);
+      const region = mapDataSource.REGIONS[index];
+      const cmds = parseSVGPath(region.path);
+      const pts = pathToPoints(cmds);
+      editDragging = { type: 'region', index, startX: pt.x, startY: pt.y, origPts: pts.map(p => ({ ...p })) };
+      editSelect('region', index);
+    }
+
+    function startLandmarkDrag(e, index) {
+      e.stopPropagation();
+      const pt = screenToSVG(e.clientX, e.clientY);
+      const lm = mapDataSource.LANDMARKS[index];
+      editDragging = { type: 'landmark', index, startX: pt.x, startY: pt.y, origX: lm.position[0], origY: lm.position[1] };
+      editSelect('landmark', index);
+    }
+
+    function startLabelDrag(e, regionId, textEl) {
+      e.stopPropagation();
+      const pt = screenToSVG(e.clientX, e.clientY);
+      const x = parseFloat(textEl.getAttribute('x'));
+      const y = parseFloat(textEl.getAttribute('y'));
+      editDragging = { type: 'label', regionId, textEl, startX: pt.x, startY: pt.y, origX: x, origY: y };
+    }
+
+    function onEditMouseMove(e) {
+      if (!editDragging) return;
+      const pt = screenToSVG(e.clientX, e.clientY);
+      const dx = pt.x - editDragging.startX;
+      const dy = pt.y - editDragging.startY;
+
+      // 拖拽防抖：移动超过阈值才算真正拖拽
+      if (!editDragging.started) {
+        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+        editDragging.started = true;
+        pushUndo();
+        // 拖拽开始，隐藏标签（避免不跟手）
+        document.getElementById('region-labels').style.display = 'none';
+        document.getElementById('subregion-labels').style.display = 'none';
+      }
+
+      if (editDragging.type === 'region') {
+        const region = mapDataSource.REGIONS[editDragging.index];
+        const newPts = editDragging.origPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+        region.path = pointsToPathD(newPts);
+        // 直接更新 SVG 元素，不重建 DOM
+        const regionEl = document.querySelectorAll('.region')[editDragging.index];
+        if (regionEl) regionEl.setAttribute('d', region.path);
+      } else if (editDragging.type === 'control-point') {
+        const idx = editDragging.idx;
+        editPathPoints[idx] = { x: editDragging.origX + dx, y: editDragging.origY + dy };
+        const region = mapDataSource.REGIONS[editSelection.index];
+        region.path = pointsToPathD(editPathPoints);
+        const regionEl = document.querySelectorAll('.region')[editSelection.index];
+        if (regionEl) regionEl.setAttribute('d', region.path);
+        // 更新控制点位置
+        const cp = editControlEls[idx];
+        if (cp && cp.setAttribute) { cp.setAttribute('cx', editPathPoints[idx].x); cp.setAttribute('cy', editPathPoints[idx].y); }
+      } else if (editDragging.type === 'landmark') {
+        const lm = mapDataSource.LANDMARKS[editDragging.index];
+        lm.position = [editDragging.origX + dx, editDragging.origY + dy];
+        // 直接更新地标 SVG 位置
+        const lmEl = document.querySelectorAll('.landmark')[editDragging.index];
+        if (lmEl) {
+          const circles = lmEl.querySelectorAll('circle');
+          const texts = lmEl.querySelectorAll('text');
+          const [nx, ny] = lm.position;
+          circles.forEach(c => { c.setAttribute('cx', nx); c.setAttribute('cy', ny); });
+          texts.forEach((t, i) => { t.setAttribute('x', nx); t.setAttribute('y', i === 0 ? ny : ny + 3); });
+        }
+      } else if (editDragging.type === 'label') {
+        const nx = editDragging.origX + dx;
+        const ny = editDragging.origY + dy;
+        editDragging.textEl.setAttribute('x', nx);
+        editDragging.textEl.setAttribute('y', ny);
+        // 保存到数据源
+        if (!mapDataSource.labelPositions) mapDataSource.labelPositions = {};
+        mapDataSource.labelPositions[editDragging.regionId] = [Math.round(nx * 10) / 10, Math.round(ny * 10) / 10];
+      }
+    }
+
+    function onEditMouseUp() {
+      if (editDragging && editDragging.started) {
+        editJustDragged = true;
+        setTimeout(() => { editJustDragged = false; }, 100);
+        // 恢复标签显示
+        document.getElementById('region-labels').style.display = '';
+        document.getElementById('subregion-labels').style.display = '';
+        // 标签拖拽不需要重建，直接更新数据即可
+        if (editDragging.type === 'label') {
+          // 数据已在 onEditMouseMove 中更新
+        } else {
+          rebuildMap();
+          if (editDragging.type === 'control-point' && editSelection) {
+            editSelect('region', editSelection.index);
+          } else if (editDragging.type === 'region') {
+            editSelect('region', editDragging.index);
+          } else if (editDragging.type === 'landmark') {
+            editSelect('landmark', editDragging.index);
+          }
+        }
+      }
+      editDragging = null;
+    }
+
+    // --- 属性面板 ---
+    function showRegionProps(index) {
+      const r = mapDataSource.REGIONS[index];
+      if (!r) return;
+      editPropsEl.innerHTML = `
+        <h3>🗺️ 区域属性</h3>
+        <div class="prop-row"><label>名称</label><input id="ep-name" value="${r.name || ''}"></div>
+        <div class="prop-row"><label>统治势力</label><input id="ep-ruler" value="${r.ruler || ''}"></div>
+        <div class="prop-row"><label>理念</label><input id="ep-philosophy" value="${r.philosophy || ''}"></div>
+        <div class="prop-row"><label>描述</label><textarea id="ep-desc">${r.description || ''}</textarea></div>
+        <div class="prop-row"><label>填充色</label><input type="color" id="ep-fill" value="${r.fill || '#1a3a2a'}"></div>
+        <div class="prop-row"><label>边框色</label><input type="color" id="ep-stroke" value="${r.stroke || '#3a6a4a'}"></div>
+        <div class="prop-row"><label>实力等级 (1-10)</label><input type="number" id="ep-power" min="1" max="10" value="${r.powerLevel || 5}"></div>
+        <div class="prop-actions">
+          <button class="btn-save-props" onclick="applyRegionProps(${index})">应用</button>
+          <button class="btn-delete" onclick="deleteRegion(${index})">删除</button>
+        </div>`;
+      editPropsEl.classList.add('visible');
+    }
+
+    function showLandmarkProps(index) {
+      const lm = mapDataSource.LANDMARKS[index];
+      if (!lm) return;
+      editPropsEl.innerHTML = `
+        <h3>📍 地标属性</h3>
+        <div class="prop-row"><label>名称</label><input id="ep-name" value="${lm.name || ''}"></div>
+        <div class="prop-row"><label>类型</label><select id="ep-type">
+          ${['ruins','settlement','volcano','swamp','ice','mountain','city','valley'].map(t => `<option value="${t}" ${lm.type===t?'selected':''}>${getTypeName(t)}</option>`).join('')}
+        </select></div>
+        <div class="prop-row"><label>描述</label><textarea id="ep-desc">${lm.description || ''}</textarea></div>
+        <div class="prop-row"><label>颜色</label><input type="color" id="ep-color" value="${lm.color || '#ff4444'}"></div>
+        <div class="prop-row"><label>危险等级 (1-5)</label><input type="number" id="ep-danger" min="1" max="5" value="${lm.danger_level || 1}"></div>
+        <div class="prop-actions">
+          <button class="btn-save-props" onclick="applyLandmarkProps(${index})">应用</button>
+          <button class="btn-delete" onclick="deleteLandmark(${index})">删除</button>
+        </div>`;
+      editPropsEl.classList.add('visible');
+    }
+
+    function applyRegionProps(index) {
+      const r = mapDataSource.REGIONS[index];
+      if (!r) return;
+      pushUndo();
+      r.name = document.getElementById('ep-name').value;
+      r.ruler = document.getElementById('ep-ruler').value;
+      r.philosophy = document.getElementById('ep-philosophy').value;
+      r.description = document.getElementById('ep-desc').value;
+      r.fill = document.getElementById('ep-fill').value;
+      r.stroke = document.getElementById('ep-stroke').value;
+      r.powerLevel = parseInt(document.getElementById('ep-power').value) || 5;
+      rebuildMap();
+      editSelect('region', index);
+    }
+
+    function applyLandmarkProps(index) {
+      const lm = mapDataSource.LANDMARKS[index];
+      if (!lm) return;
+      pushUndo();
+      lm.name = document.getElementById('ep-name').value;
+      lm.type = document.getElementById('ep-type').value;
+      lm.description = document.getElementById('ep-desc').value;
+      lm.color = document.getElementById('ep-color').value;
+      lm.danger_level = parseInt(document.getElementById('ep-danger').value) || 1;
+      rebuildMap();
+      editSelect('landmark', index);
+    }
+
+    function deleteRegion(index) {
+      if (!confirm('确定删除此区域？')) return;
+      pushUndo();
+      mapDataSource.REGIONS.splice(index, 1);
+      editDeselect();
+      rebuildMap();
+    }
+
+    function deleteLandmark(index) {
+      if (!confirm('确定删除此地标？')) return;
+      pushUndo();
+      mapDataSource.LANDMARKS.splice(index, 1);
+      editDeselect();
+      rebuildMap();
+    }
+
+    // --- 添加地标 ---
+    function addLandmarkAtPoint(e) {
+      pushUndo();
+      const pt = screenToSVG(e.clientX, e.clientY);
+      const lm = {
+        name: '新地标',
+        position: [Math.round(pt.x * 10) / 10, Math.round(pt.y * 10) / 10],
+        icon: '📍', color: '#ff4444', type: 'ruins', danger_level: 1, description: ''
+      };
+      mapDataSource.LANDMARKS.push(lm);
+      rebuildMap();
+      editSelect('landmark', mapDataSource.LANDMARKS.length - 1);
+      setTool('select');
+    }
+
+    // --- 添加区域（点击画多边形） ---
+    function addRegionPoint(e) {
+      const pt = screenToSVG(e.clientX, e.clientY);
+      editNewRegionPoints.push({ x: Math.round(pt.x * 10) / 10, y: Math.round(pt.y * 10) / 10 });
+      rebuildMap();
+      // 画临时线
+      if (editNewRegionPoints.length > 1) {
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('id', 'new-region-preview');
+        for (let i = 0; i < editNewRegionPoints.length - 1; i++) {
+          const p1 = editNewRegionPoints[i], p2 = editNewRegionPoints[i + 1];
+          g.appendChild(svgEl('line', { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, stroke: '#ff8844', 'stroke-width': 0.4, 'stroke-dasharray': '1,1' }));
+        }
+        editNewRegionPoints.forEach(p => {
+          g.appendChild(svgEl('circle', { cx: p.x, cy: p.y, r: 0.6, fill: '#ff8844', stroke: '#fff', 'stroke-width': 0.2 }));
+        });
+        svg.appendChild(g);
+      }
+    }
+
+    function finishNewRegion() {
+      if (editNewRegionPoints.length < 3) { editNewRegionPoints = []; rebuildMap(); return; }
+      pushUndo();
+      const r = {
+        name: '新区域', path: pointsToPathD(editNewRegionPoints),
+        fill: '#1a3a2a', stroke: '#3a6a4a', strokeWidth: 0.5,
+        ruler: '', philosophy: '', description: '', powerLevel: 5,
+        subRegions: [], id: '新区域'
+      };
+      mapDataSource.REGIONS.push(r);
+      editNewRegionPoints = [];
+      rebuildMap();
+      editSelect('region', mapDataSource.REGIONS.length - 1);
+      setTool('select');
+    }
+
+    // --- 添加地形装饰 ---
+    function addDecorationAtPoint(e, subType) {
+      pushUndo();
+      const pt = screenToSVG(e.clientX, e.clientY);
+      const x = Math.round(pt.x * 10) / 10, y = Math.round(pt.y * 10) / 10;
+      // 找最近的区域作为归属
+      const regionName = findNearestRegion(x, y) || Object.keys(mapDataSource.DECORATIONS)[0] || '曦和大陆';
+      if (!mapDataSource.DECORATIONS[regionName]) mapDataSource.DECORATIONS[regionName] = {};
+
+      const decor = mapDataSource.DECORATIONS[regionName];
+      const item = { center: [x, y], radius: 2 };
+
+      switch (subType) {
+        case 'forest': (decor.forests = decor.forests || []).push(item); break;
+        case 'mountain': (decor.mountains = decor.mountains || []).push(item); break;
+        case 'lake': (decor.lakes = decor.lakes || []).push(item); break;
+        case 'river':
+          (decor.rivers = decor.rivers || []).push({ path: `M${x},${y} L${x},${y - 5}`, width: 0.3 });
+          break;
+      }
+      rebuildMap();
+      setTool('select');
+    }
+
+    function findNearestRegion(x, y) {
+      let best = null, bestDist = Infinity;
+      for (const r of mapDataSource.REGIONS) {
+        const cmds = parseSVGPath(r.path);
+        const pts = pathToPoints(cmds);
+        if (!pts.length) continue;
+        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+        const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+        const d = (cx - x) ** 2 + (cy - y) ** 2;
+        if (d < bestDist) { bestDist = d; best = r.name || r.id; }
+      }
+      return best;
+    }
+
+    // --- 重建地图 ---
+    function rebuildMap() {
+      document.getElementById('regions').innerHTML = '';
+      document.getElementById('decorations').innerHTML = '';
+      document.getElementById('subregion-labels').innerHTML = '';
+      document.getElementById('region-labels').innerHTML = '';
+      document.getElementById('landmarks').innerHTML = '';
+      const preview = document.getElementById('new-region-preview');
+      if (preview) preview.remove();
+      renderMap(mapDataSource);
+    }
+
+    // --- 撤销 ---
+    function pushUndo() {
+      editUndoStack.push(JSON.parse(JSON.stringify(mapDataSource)));
+      if (editUndoStack.length > 30) editUndoStack.shift();
+    }
+
+    function undo() {
+      if (!editUndoStack.length) return;
+      mapDataSource = editUndoStack.pop();
+      editDeselect();
+      rebuildMap();
+    }
+
+    // --- 双击完成新区域 ---
+    svg.addEventListener('dblclick', e => {
+      if (!editMode) return;
+      if (editTool === 'add-region' && editNewRegionPoints.length >= 3) {
+        e.preventDefault();
+        e.stopPropagation();
+        finishNewRegion();
+      }
+    });
+
+    // --- YAML 导出 ---
+    function saveMapYAML() {
+      const yaml = exportToYAML(mapDataSource);
+      const blob = new Blob([yaml], { type: 'text/yaml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'world_map.yaml';
+      a.click(); URL.revokeObjectURL(url);
+    }
+
+    function exportToYAML(data) {
+      let out = '# 世界地图 - 二陆三洲\n# 坐标系：100x100 平面网格，原点左下角\n# 数据源：AI 读写此文件，人通过 HTML 查看\n\n';
+      out += 'map:\n  width: 100\n  height: 100\n  background: "#0a0a1a"\n\n';
+      out += '# 地形图例\n';
+      out += 'terrain:\n';
+      for (const [k, v] of Object.entries(data.TERRAIN || {})) {
+        out += `  ${k}:    { char: "${v.char}", color: "${v.color}", name: "${v.name}" }\n`;
+      }
+      out += '\n# 区域定义\nregions:\n';
+      for (const r of data.REGIONS) {
+        out += `  ${r.name || r.id}:\n`;
+        out += `    path: "${r.path}"\n`;
+        out += `    fill: "${r.fill}"\n`;
+        out += `    stroke: "${r.stroke}"\n`;
+        out += `    stroke_width: ${r.strokeWidth}\n`;
+        out += `    ruler: "${r.ruler}"\n`;
+        out += `    philosophy: "${r.philosophy}"\n`;
+        out += `    description: "${r.description}"\n`;
+        out += `    power_level: ${r.powerLevel}\n`;
+        if (r.subRegions && r.subRegions.length) {
+          out += '    sub_regions:\n';
+          for (const sub of r.subRegions) {
+            out += `      ${sub.name}: { center: [${sub.center}], description: "${sub.description || ''}", terrain: ${JSON.stringify(sub.terrain || [])} }\n`;
+          }
+        }
+        out += '\n';
+      }
+      out += '# 势力关系\nfactions:\n';
+      for (const f of data.FACTIONS) {
+        out += `  ${f.name}:\n    type: "${f.type}"\n    alignment: "${f.alignment}"\n    regions: ${JSON.stringify(f.regions)}\n    allies: ${JSON.stringify(f.allies)}\n    enemies: ${JSON.stringify(f.enemies)}\n    description: "${f.description}"\n\n`;
+      }
+      out += '# 地标\nlandmarks:\n';
+      const mainLM = data.LANDMARKS.filter(l => !l._extra);
+      const extraLM = data.LANDMARKS.filter(l => l._extra);
+      for (const lm of mainLM) {
+        out += `  ${lm.name}:\n    position: [${lm.position}]\n    icon: "${lm.icon || '📍'}"\n    color: "${lm.color}"\n    description: "${lm.description}"\n    type: "${lm.type}"\n    danger_level: ${lm.danger_level}\n\n`;
+      }
+      if (extraLM.length) {
+        out += '# 额外地标\nextra_landmarks:\n';
+        for (const lm of extraLM) {
+          out += `  ${lm.name}:\n    position: [${lm.position}]\n    icon: "${lm.icon || '📍'}"\n    color: "${lm.color}"\n    description: "${lm.description}"\n    type: "${lm.type}"\n    danger_level: ${lm.danger_level}\n\n`;
+        }
+      }
+      // 区域标签位置
+      if (data.labelPositions && Object.keys(data.labelPositions).length) {
+        out += '# 区域标签位置\nlabel_positions:\n';
+        for (const [name, pos] of Object.entries(data.labelPositions)) {
+          out += `  ${name}: [${pos}]\n`;
+        }
+        out += '\n';
+      }
+      out += '# 地形装饰\ndecorations:\n';
+      for (const [region, decor] of Object.entries(data.DECORATIONS || {})) {
+        out += `  ${region}:\n`;
+        for (const [type, items] of Object.entries(decor)) {
+          if (!items || !items.length) continue;
+          out += `    ${type}:\n`;
+          for (const item of items) {
+            if (item.path) out += `      - { path: "${item.path}", width: ${item.width || 0.3} }\n`;
+            else if (item.name) out += `      - { center: [${item.center}], radius: ${item.radius}, name: "${item.name}" }\n`;
+            else out += `      - { center: [${item.center}], radius: ${item.radius} }\n`;
+          }
+        }
+        out += '\n';
+      }
+      return out;
+    }
+
+    // --- 编辑模式事件拦截 ---
+    function editModeClick(e) {
+      if (!editMode) return false;
+      if (editJustDragged) return true; // 拖拽刚结束，跳过 click
+
+      // 添加地标模式
+      if (editTool === 'add-landmark') { addLandmarkAtPoint(e); return true; }
+
+      // 添加区域模式
+      if (editTool === 'add-region') { addRegionPoint(e); return true; }
+
+      // 添加地形装饰模式
+      if (editTool.startsWith('add-')) {
+        const subType = editTool.replace('add-', '');
+        addDecorationAtPoint(e, subType);
+        return true;
+      }
+
+      // 选择/移动/编辑模式
+      const region = e.target.closest('.region');
+      if (region) {
+        const idx = [...document.querySelectorAll('.region')].indexOf(region);
+        if (editTool === 'reshape') {
+          editSelect('region', idx);
+        } else {
+          startRegionDrag(e, idx);
+        }
+        return true;
+      }
+
+      const landmark = e.target.closest('.landmark');
+      if (landmark) {
+        const idx = [...document.querySelectorAll('.landmark')].indexOf(landmark);
+        startLandmarkDrag(e, idx);
+        return true;
+      }
+
+      // 点击空白
+      editDeselect();
+      return true;
+    }
+
+    // 键盘扩展
+    const origKeyHandler = document.onkeydown;
+    document.addEventListener('keydown', e => {
+      if (!editMode) return;
+      if (e.key === 'Escape') {
+        if (editNewRegionPoints.length) { editNewRegionPoints = []; rebuildMap(); }
+        else editDeselect();
+      }
+      if (e.key === 'Delete' && editSelection) {
+        if (editSelection.type === 'region') deleteRegion(editSelection.index);
+        else if (editSelection.type === 'landmark') deleteLandmark(editSelection.index);
+      }
+      if (e.key === 'Enter' && editTool === 'add-region' && editNewRegionPoints.length >= 3) {
+        finishNewRegion();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        undo();
+      }
+    });
+
+    // ========== 键盘 & 触摸 ==========
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closePanel();
+      if (e.key === '+' || e.key === '=') zoomIn();
+      if (e.key === '-') zoomOut();
+      if (e.key === '0') resetView();
+      if (e.key === '/' && !e.target.matches('input')) { e.preventDefault(); searchInput.focus(); }
+    });
+    let touchStartDist = 0, touchStartScale = 1;
+    container.addEventListener('touchstart', e => {
+      if (e.touches.length === 2) { touchStartDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); touchStartScale = scale; }
+      else if (e.touches.length === 1) { isPanning = true; startX = e.touches[0].clientX - panX; startY = e.touches[0].clientY - panY; }
+    });
+    container.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (e.touches.length === 2) { scale = Math.max(0.5, Math.min(5, touchStartScale * (Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY) / touchStartDist))); updateTransform(); }
+      else if (e.touches.length === 1 && isPanning) { panX = e.touches[0].clientX - startX; panY = e.touches[0].clientY - startY; updateTransform(); }
+    });
+    container.addEventListener('touchend', () => { isPanning = false; });
+
+    // ============================================================
+    // 启动
+    // ============================================================
+    let mapDataSource = null;
+
+    loadData()
+      .then(data => {
+        try {
+          mapDataSource = buildMapData(data);
+          if (!mapDataSource.labelPositions) mapDataSource.labelPositions = {};
+          // 标记 extra_landmarks（导出时区分 landmarks / extra_landmarks）
+          const origLandmarks = Object.keys(data.landmarks || {});
+          mapDataSource.LANDMARKS.forEach(lm => { if (!origLandmarks.includes(lm.name)) lm._extra = true; });
+          renderMap(mapDataSource);
+          loadingEl.style.display = 'none';
+        } catch (err) {
+          loadingEl.innerHTML = '渲染失败: ' + err.message + '<br><br><pre style="text-align:left;max-height:50vh;overflow:auto;font-size:11px;color:#aaa">'
+            + err.stack + '</pre>';
+          loadingEl.classList.add('error');
+        }
+      })
+      .catch(err => {
+        loadingEl.innerHTML = '加载失败: ' + err.message
+          + '<br><br>请用本地服务器打开，不要用 file:// 协议'
+          + '<br><br><code>cd map && python -m http.server 8000</code>'
+          + '<br>然后打开 <code>http://localhost:8000/world_map.html</code>';
+        loadingEl.classList.add('error');
+      });
+  </script>
+</body>
+</html>
