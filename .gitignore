@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+.venv/
+
+# IDE
+.idea/
+*.iml
+
+# 工具与个人配置
+.workbuddy/
+.screenshots/
+.claude/settings.local.json
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 生成的 .txt 文件（yaml2txt.py 产物；requirements.txt 需入库）
+*.txt
+!requirements.txt
+
+# LanceDB 数据
+世界设定规则/脚本/.lancedb_data/
+# 通用匹配（防止其他路径下的向量库被误提交）
+.lancedb_data/
+*.lance
+
+# 本地模型（大文件，不提交）
+世界设定规则/脚本/模型/
+
+# 脚本缓存（已统一隔离到 .cache/，见 novel_kb.py CACHE_DIR）
+世界设定规则/脚本/.cache/
+# 旧路径兼容（历史遗留文件，迁移后可删除）
+世界设定规则/脚本/.hash_cache.json
+世界设定规则/脚本/.query_cache.json
+世界设定规则/脚本/.query_history.json
+世界设定规则/脚本/.semantic_cache.json
+世界设定规则/脚本/.ask_config.json
+世界设定规则/脚本/.env
+世界设定规则/脚本/__pycache__/
+
+# 通用 Python 缓存与临时文件
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+*.log
+*.tmp
+*.bak
+
+# 密钥类兜底
+.env
+.env.*
+*.pem
+*.key
+credentials*.json
+
+# 生成的地图产物（由地图编辑器产出，体积大，不需版本控制）
+世界设定规则/设定/地图/世界地图.html
+世界设定规则/设定/地图编辑器.json
+
+# 会话产物备份（旧索引回退点 / 脚本改动前备份）
+世界设定规则/脚本/.lancedb_data_v1_backup/
+novel_kb.py.bak_*
+.backups/
+
+# 正文审计脚本产物（工具本身保留追踪）
+audit_*.txt
+
+# 注：正文/ 下章节为纯文本 md，体积小，保持 git 追踪以便版本管理；
+#     若后续引入大体积二进制（图片/模型导出等），请使用 Git LFS。
